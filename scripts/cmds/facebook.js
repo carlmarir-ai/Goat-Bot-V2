@@ -1,10 +1,9 @@
-const fs = require("fs-extra");
 const axios = require("axios");
 
 module.exports = {
   config: {
     name: "facebook",
-    version: "2.0",
+    version: "1.1",
     author: "Aminul Sardar",
     countDown: 5,
     role: 0,
@@ -19,7 +18,6 @@ module.exports = {
 
     if (!body || !messageID) return;
 
-    // Facebook links only
     const match = body.match(
       /https?:\/\/(?:www\.|m\.|web\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i
     );
@@ -29,7 +27,7 @@ module.exports = {
     const facebookURL = match[0].replace(/[)\]}>.,]+$/, "");
 
     try {
-      // ⏳ Downloading
+      // ⏳
       api.setMessageReaction(
         "⏳",
         messageID,
@@ -37,24 +35,33 @@ module.exports = {
         true
       );
 
-      // =========================
+      // ==========================================
       // CLOUDFLARE WORKER
-      // =========================
+      // ==========================================
       const workerURL =
         "https://black-waterfall-01b9.jamesbaroyofficial.workers.dev/download?url=" +
         encodeURIComponent(facebookURL);
 
-      const workerResponse = await axios.get(workerURL, {
-        timeout: 30000
-      });
+      const workerResponse = await axios.get(
+        workerURL,
+        {
+          timeout: 30000
+        }
+      );
 
       const data = workerResponse?.data;
 
-      console.log("[FACEBOOK WORKER]", data);
+      console.log(
+        "[FACEBOOK WORKER]",
+        data
+      );
 
-      if (!data?.success || !data?.download_url) {
+      if (
+        !data?.success ||
+        !data?.download_url
+      ) {
         console.error(
-          "[FACEBOOK] No download URL received"
+          "[FACEBOOK] No download URL"
         );
 
         api.setMessageReaction(
@@ -73,19 +80,26 @@ module.exports = {
         "[FACEBOOK] Download URL received"
       );
 
-      // =========================
-      // DOWNLOAD VIDEO AS BUFFER
-      // =========================
-      const videoResponse = await axios.get(videoURL, {
-        responseType: "arraybuffer",
-        timeout: 60000,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity
-      });
 
-      const videoBuffer = Buffer.from(
-        videoResponse.data
+      // ==========================================
+      // DOWNLOAD VIDEO AS BUFFER
+      // ==========================================
+      const videoResponse = await axios.get(
+        videoURL,
+        {
+          responseType: "arraybuffer",
+          timeout: 60000,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0"
+          }
+        }
       );
+
+      const videoBuffer =
+        Buffer.from(videoResponse.data);
 
       console.log(
         "[FACEBOOK] Video size:",
@@ -95,24 +109,20 @@ module.exports = {
 
       if (!videoBuffer.length) {
         throw new Error(
-          "Downloaded video is empty"
+          "Facebook video is empty"
         );
       }
 
-      // =========================
+
+      // ==========================================
       // SEND VIDEO
-      // =========================
+      // ==========================================
       api.sendMessage(
         {
           attachment: videoBuffer
         },
         threadID,
-        (err, messageInfo) => {
-
-          console.log(
-            "[FACEBOOK SEND]",
-            err || messageInfo
-          );
+        (err, info) => {
 
           if (err) {
             console.error(
@@ -130,7 +140,12 @@ module.exports = {
             return;
           }
 
-          // ⏳ → ✅
+          console.log(
+            "[FACEBOOK SEND SUCCESS]",
+            info
+          );
+
+          // ✅
           api.setMessageReaction(
             "✅",
             messageID,
@@ -142,6 +157,7 @@ module.exports = {
       );
 
     } catch (err) {
+
       console.error(
         "[FACEBOOK ERROR]",
         err
