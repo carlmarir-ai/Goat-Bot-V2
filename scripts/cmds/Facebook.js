@@ -1,12 +1,10 @@
 const fs = require("fs-extra");
 const axios = require("axios");
-const request = require("request");
-const path = require("path");
 
 module.exports = {
   config: {
     name: "facebook",
-    version: "1.0",
+    version: "2.0",
     author: "Aminul Sardar",
     countDown: 5,
     role: 0,
@@ -31,7 +29,7 @@ module.exports = {
     const facebookURL = match[0].replace(/[)\]}>.,]+$/, "");
 
     try {
-      // Downloading
+      // ⏳ Downloading
       api.setMessageReaction(
         "⏳",
         messageID,
@@ -39,117 +37,109 @@ module.exports = {
         true
       );
 
-      // Cloudflare Worker
+      // =========================
+      // CLOUDFLARE WORKER
+      // =========================
       const workerURL =
         "https://black-waterfall-01b9.jamesbaroyofficial.workers.dev/download?url=" +
         encodeURIComponent(facebookURL);
 
-      const res = await axios.get(workerURL, {
+      const workerResponse = await axios.get(workerURL, {
         timeout: 30000
       });
 
-      const data = res?.data;
+      const data = workerResponse?.data;
 
       console.log("[FACEBOOK WORKER]", data);
 
       if (!data?.success || !data?.download_url) {
+        console.error(
+          "[FACEBOOK] No download URL received"
+        );
+
         api.setMessageReaction(
           "❌",
           messageID,
           () => {},
           true
         );
+
         return;
       }
 
       const videoURL = data.download_url;
 
-      const cacheDir = path.join(__dirname, "cache");
-      await fs.ensureDir(cacheDir);
-
-      const filePath = path.join(
-        cacheDir,
-        `facebook_${Date.now()}.mp4`
+      console.log(
+        "[FACEBOOK] Download URL received"
       );
 
-      // Download Facebook video
-      request(videoURL)
-        .on("error", (err) => {
-          console.error(
-            "[FACEBOOK DOWNLOAD ERROR]",
-            err
+      // =========================
+      // DOWNLOAD VIDEO AS BUFFER
+      // =========================
+      const videoResponse = await axios.get(videoURL, {
+        responseType: "arraybuffer",
+        timeout: 60000,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      });
+
+      const videoBuffer = Buffer.from(
+        videoResponse.data
+      );
+
+      console.log(
+        "[FACEBOOK] Video size:",
+        videoBuffer.length,
+        "bytes"
+      );
+
+      if (!videoBuffer.length) {
+        throw new Error(
+          "Downloaded video is empty"
+        );
+      }
+
+      // =========================
+      // SEND VIDEO
+      // =========================
+      api.sendMessage(
+        {
+          attachment: videoBuffer
+        },
+        threadID,
+        (err, messageInfo) => {
+
+          console.log(
+            "[FACEBOOK SEND]",
+            err || messageInfo
           );
 
-          try {
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-            }
-          } catch (e) {}
+          if (err) {
+            console.error(
+              "[FACEBOOK SEND ERROR]",
+              err
+            );
 
-          api.setMessageReaction(
-            "❌",
-            messageID,
-            () => {},
-            true
-          );
-        })
-        .pipe(fs.createWriteStream(filePath))
-        .on("close", () => {
-
-          if (!fs.existsSync(filePath)) {
             api.setMessageReaction(
               "❌",
               messageID,
               () => {},
               true
             );
+
             return;
           }
 
-          // Video only
-          api.sendMessage(
-            {
-              attachment: fs.createReadStream(filePath)
-            },
-            threadID,
-            (err) => {
-
-              try {
-                if (fs.existsSync(filePath)) {
-                  fs.unlinkSync(filePath);
-                }
-              } catch (e) {
-                console.error(
-                  "[FACEBOOK CLEANUP]",
-                  e
-                );
-              }
-
-              if (err) {
-                console.error(
-                  "[FACEBOOK SEND ERROR]",
-                  err
-                );
-
-                api.setMessageReaction(
-                  "❌",
-                  messageID,
-                  () => {},
-                  true
-                );
-              } else {
-                // ⏳ → ✅
-                api.setMessageReaction(
-                  "✅",
-                  messageID,
-                  () => {},
-                  true
-                );
-              }
-            },
-            messageID
+          // ⏳ → ✅
+          api.setMessageReaction(
+            "✅",
+            messageID,
+            () => {},
+            true
           );
-        });
+        },
+        messageID
+      );
 
     } catch (err) {
       console.error(
