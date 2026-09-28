@@ -1,12 +1,11 @@
 const fs = require("fs-extra");
 const axios = require("axios");
-const request = require("request");
 const path = require("path");
 
 module.exports = {
   config: {
     name: "tiktok",
-    version: "1.1",
+    version: "1.2",
     author: "Aminul Sardar",
     countDown: 5,
     role: 0,
@@ -30,7 +29,7 @@ module.exports = {
 
       const tiktokURL = match[0].replace(/[)\]}>.,]+$/, "");
 
-      // ⏳ Downloading
+      // ⏳ Processing
       api.setMessageReaction(
         "⏳",
         messageID,
@@ -48,84 +47,182 @@ module.exports = {
 
       const data = response?.data;
 
+      console.log("[TIKTOK WORKER]", data);
+
       if (!data?.success || !data?.download_url) {
+        console.error(
+          "[TIKTOK WORKER ERROR]",
+          data
+        );
+
         api.setMessageReaction(
           "❌",
           messageID,
           () => {},
           true
         );
+
         return;
       }
 
       const videoURL = data.download_url;
 
-      const filePath = path.join(
-        __dirname,
-        "cache",
-        `tiktok_${Date.now()}.mp4`
+      console.log(
+        "[TIKTOK DOWNLOAD URL]",
+        videoURL
       );
 
-      await fs.ensureDir(path.dirname(filePath));
+      const cacheDir = path.join(
+        __dirname,
+        "cache"
+      );
 
-      request(videoURL)
-        .on("error", (err) => {
-          console.error("[TIKTOK DOWNLOAD]", err);
+      await fs.ensureDir(cacheDir);
 
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+      const filePath = path.join(
+        cacheDir,
+        `tiktok_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}.mp4`
+      );
+
+      // Download video
+      const videoResponse = await axios.get(
+        videoURL,
+        {
+          responseType: "stream",
+          timeout: 60000,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0"
           }
+        }
+      );
 
-          api.setMessageReaction(
-            "❌",
-            messageID,
-            () => {},
-            true
+      await new Promise(
+        (resolve, reject) => {
+          const writer =
+            require("fs").createWriteStream(
+              filePath
+            );
+
+          videoResponse.data.pipe(writer);
+
+          writer.on(
+            "finish",
+            resolve
           );
-        })
-        .pipe(fs.createWriteStream(filePath))
-        .on("close", () => {
 
-          if (!fs.existsSync(filePath)) {
+          writer.on(
+            "error",
+            reject
+          );
+
+          videoResponse.data.on(
+            "error",
+            reject
+          );
+        }
+      );
+
+      // Check file
+      const stat =
+        await fs.stat(filePath);
+
+      console.log(
+        "[TIKTOK] Video size:",
+        stat.size,
+        "bytes"
+      );
+
+      if (!stat.size) {
+        throw new Error(
+          "Downloaded video is empty"
+        );
+      }
+
+      // Send video
+      api.sendMessage(
+        {
+          attachment:
+            fs.createReadStream(
+              filePath
+            )
+        },
+        threadID,
+        (err) => {
+
+          if (err) {
+            console.error(
+              "[TIKTOK SEND ERROR]",
+              err
+            );
+
+            try {
+              if (
+                fs.existsSync(
+                  filePath
+                )
+              ) {
+                fs.unlinkSync(
+                  filePath
+                );
+              }
+            } catch (e) {}
+
             api.setMessageReaction(
               "❌",
               messageID,
               () => {},
               true
             );
+
             return;
           }
 
-          api.sendMessage(
-            {
-              attachment: fs.createReadStream(filePath)
-            },
-            threadID,
-            () => {
-
-              // Delete temporary video
-              try {
-                if (fs.existsSync(filePath)) {
-                  fs.unlinkSync(filePath);
-                }
-              } catch (e) {
-                console.error("[TIKTOK CLEANUP]", e);
-              }
-
-              // ⏳ → ✅
-              api.setMessageReaction(
-                "✅",
-                messageID,
-                () => {},
-                true
-              );
-            },
-            messageID
+          console.log(
+            "[TIKTOK] Video sent successfully"
           );
-        });
+
+          // Delete temporary file
+          try {
+            if (
+              fs.existsSync(
+                filePath
+              )
+            ) {
+              fs.unlinkSync(
+                filePath
+              );
+            }
+          } catch (e) {
+            console.error(
+              "[TIKTOK CLEANUP]",
+              e
+            );
+          }
+
+          // ⏳ → ✅
+          api.setMessageReaction(
+            "✅",
+            messageID,
+            () => {},
+            true
+          );
+        },
+        messageID
+      );
 
     } catch (err) {
-      console.error("[TIKTOK ERROR]", err);
+
+      console.error(
+        "[TIKTOK ERROR]",
+        err?.response?.data ||
+        err?.message ||
+        err
+      );
 
       api.setMessageReaction(
         "❌",
