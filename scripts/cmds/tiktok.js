@@ -5,7 +5,7 @@ const path = require("path");
 module.exports = {
   config: {
     name: "tiktok",
-    version: "1.2",
+    version: "1.3",
     author: "Aminul Sardar",
     countDown: 5,
     role: 0,
@@ -36,9 +36,13 @@ module.exports = {
     );
 
     let filePath = null;
+    let sendingVideo = false;
 
     try {
-      // ⏳ Processing
+
+      // =========================
+      // ⏳ PROCESSING
+      // =========================
       api.setMessageReaction(
         "⏳",
         messageID,
@@ -67,32 +71,20 @@ module.exports = {
         data
       );
 
-      // Worker failed
       if (
         !data?.success ||
         !data?.download_url
       ) {
-        console.error(
-          "[TIKTOK WORKER ERROR]",
-          data
+        throw new Error(
+          "Worker did not return download_url"
         );
-
-        api.setMessageReaction(
-          "❌",
-          messageID,
-          () => {},
-          true
-        );
-
-        return;
       }
 
       const videoURL =
         data.download_url;
 
       console.log(
-        "[TIKTOK DOWNLOAD URL]",
-        videoURL
+        "[TIKTOK] Download URL received"
       );
 
       // =========================
@@ -167,7 +159,7 @@ module.exports = {
       );
 
       // =========================
-      // CHECK VIDEO
+      // CHECK FILE
       // =========================
       if (
         !fs.existsSync(
@@ -175,7 +167,7 @@ module.exports = {
         )
       ) {
         throw new Error(
-          "Video file was not created"
+          "Video file does not exist"
         );
       }
 
@@ -192,13 +184,22 @@ module.exports = {
 
       if (stat.size <= 0) {
         throw new Error(
-          "Downloaded video is empty"
+          "Video file is empty"
         );
       }
 
       // =========================
-      // SEND VIDEO
+      // START SENDING
       // =========================
+
+      // IMPORTANT:
+      // From this point, don't show ❌
+      sendingVideo = true;
+
+      console.log(
+        "[TIKTOK] Sending video..."
+      );
+
       api.sendMessage(
         {
           attachment:
@@ -211,10 +212,12 @@ module.exports = {
         () => {
 
           console.log(
-            "[TIKTOK] Video send callback received"
+            "[TIKTOK] Video sent successfully"
           );
 
-          // Delete temporary file
+          // =========================
+          // DELETE TEMP FILE
+          // =========================
           try {
             if (
               filePath &&
@@ -233,7 +236,9 @@ module.exports = {
             );
           }
 
+          // =========================
           // ⏳ → ✅
+          // =========================
           api.setMessageReaction(
             "✅",
             messageID,
@@ -254,7 +259,22 @@ module.exports = {
         err
       );
 
-      // Cleanup on real error
+      // =========================
+      // ❌ ONLY REAL ERROR
+      // =========================
+      // If video sending already started,
+      // DON'T change it to ❌.
+      if (!sendingVideo) {
+
+        api.setMessageReaction(
+          "❌",
+          messageID,
+          () => {},
+          true
+        );
+      }
+
+      // Cleanup
       try {
         if (
           filePath &&
@@ -272,14 +292,6 @@ module.exports = {
           e
         );
       }
-
-      // ❌ REAL ERROR
-      api.setMessageReaction(
-        "❌",
-        messageID,
-        () => {},
-        true
-      );
     }
   }
 };
