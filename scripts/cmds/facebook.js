@@ -1,9 +1,11 @@
+const fs = require("fs-extra");
 const axios = require("axios");
+const path = require("path");
 
 module.exports = {
   config: {
     name: "facebook",
-    version: "1.2",
+    version: "1.3",
     author: "Aminul Sardar",
     countDown: 5,
     role: 0,
@@ -28,7 +30,7 @@ module.exports = {
     // ==========================================
     let facebookURL = null;
 
-    // First try attachment URL
+    // Prefer the actual Reel URL detected by FCA
     if (Array.isArray(attachments)) {
       for (const attachment of attachments) {
         if (
@@ -37,7 +39,8 @@ module.exports = {
             attachment.facebookUrl
           )
         ) {
-          facebookURL = attachment.facebookUrl;
+          facebookURL =
+            attachment.facebookUrl;
           break;
         }
 
@@ -47,13 +50,14 @@ module.exports = {
             attachment.url
           )
         ) {
-          facebookURL = attachment.url;
+          facebookURL =
+            attachment.url;
           break;
         }
       }
     }
 
-    // If no attachment URL, use message body
+    // Fallback to message body
     if (!facebookURL && body) {
       const match = body.match(
         /https?:\/\/(?:www\.|m\.|web\.)?(?:facebook\.com|fb\.watch)\/[^\s]+/i
@@ -72,6 +76,8 @@ module.exports = {
       facebookURL
     );
 
+    let filePath = null;
+
     try {
       // ==========================================
       // ⏳
@@ -84,6 +90,21 @@ module.exports = {
       );
 
       // ==========================================
+      // CACHE DIRECTORY
+      // ==========================================
+      const cacheDir =
+        path.join(__dirname, "cache");
+
+      await fs.ensureDir(cacheDir);
+
+      filePath = path.join(
+        cacheDir,
+        `facebook_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}.mp4`
+      );
+
+      // ==========================================
       // CLOUDFLARE WORKER
       // ==========================================
       const workerURL =
@@ -91,9 +112,12 @@ module.exports = {
         encodeURIComponent(facebookURL);
 
       const workerResponse =
-        await axios.get(workerURL, {
-          timeout: 30000
-        });
+        await axios.get(
+          workerURL,
+          {
+            timeout: 30000
+          }
+        );
 
       const data =
         workerResponse?.data;
@@ -113,14 +137,14 @@ module.exports = {
       }
 
       // ==========================================
-      // DOWNLOAD VIDEO
+      // DOWNLOAD MP4 TO FILE
       // ==========================================
       const videoResponse =
         await axios.get(
           data.download_url,
           {
             responseType:
-              "arraybuffer",
+              "stream",
             timeout: 60000,
             maxContentLength:
               Infinity,
@@ -133,29 +157,63 @@ module.exports = {
           }
         );
 
-      const videoBuffer =
-        Buffer.from(
-          videoResponse.data
-        );
+      await new Promise(
+        (resolve, reject) => {
+          const writer =
+            require("fs").createWriteStream(
+              filePath
+            );
+
+          videoResponse.data.pipe(
+            writer
+          );
+
+          writer.on(
+            "finish",
+            resolve
+          );
+
+          writer.on(
+            "error",
+            reject
+          );
+
+          videoResponse.data.on(
+            "error",
+            reject
+          );
+        }
+      );
+
+      // ==========================================
+      // CHECK FILE
+      // ==========================================
+      const stat =
+        await fs.stat(filePath);
 
       console.log(
         "[FACEBOOK] Video size:",
-        videoBuffer.length,
+        stat.size,
         "bytes"
       );
 
-      if (!videoBuffer.length) {
+      if (!stat.size) {
         throw new Error(
           "Downloaded video is empty"
         );
       }
 
       // ==========================================
-      // SEND VIDEO
+      // SEND FILE AS STREAM
       // ==========================================
+      const stream =
+        fs.createReadStream(
+          filePath
+        );
+
       api.sendMessage(
         {
-          attachment: videoBuffer
+          attachment: stream
         },
         threadID,
         (err, info) => {
@@ -165,16 +223,23 @@ module.exports = {
             err || info
           );
 
-          // IMPORTANT:
-          // Do NOT mark success when messageID is null
-          if (
-            err ||
-            !info ||
-            !info.messageID
-          ) {
+          // ======================================
+          // CALLBACK ERROR
+          // ======================================
+          if (err) {
             console.error(
-              "[FACEBOOK] Attachment was not confirmed by FCA"
+              "[FACEBOOK SEND ERROR]",
+              err
             );
+
+            try {
+              if (
+                filePath &&
+                fs.existsSync(filePath)
+              ) {
+                fs.unlinkSync(filePath);
+              }
+            } catch (e) {}
 
             api.setMessageReaction(
               "❌",
@@ -186,10 +251,26 @@ module.exports = {
             return;
           }
 
+          // ======================================
+          // SEND CALLBACK RECEIVED
+          // ======================================
           console.log(
-            "[FACEBOOK] VIDEO SENT:",
-            info.messageID
+            "[FACEBOOK] Send callback received"
           );
+
+          try {
+            if (
+              filePath &&
+              fs.existsSync(filePath)
+            ) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (e) {
+            console.error(
+              "[FACEBOOK CLEANUP]",
+              e
+            );
+          }
 
           api.setMessageReaction(
             "✅",
@@ -198,6 +279,7 @@ module.exports = {
             true
           );
         },
+
         messageID
       );
 
@@ -207,6 +289,15 @@ module.exports = {
         "[FACEBOOK ERROR]",
         err
       );
+
+      try {
+        if (
+          filePath &&
+          fs.existsSync(filePath)
+        ) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (e) {}
 
       api.setMessageReaction(
         "❌",
