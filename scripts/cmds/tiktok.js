@@ -145,91 +145,35 @@ module.exports = {
 
       // Send video
       api.sendMessage(
-        {
-          attachment:
-            fs.createReadStream(
-              filePath
-            )
-        },
-        threadID,
-        (err) => {
+  {
+    attachment: fs.createReadStream(filePath)
+  },
+  threadID,
+  () => {
 
-          if (err) {
-            console.error(
-              "[TIKTOK SEND ERROR]",
-              err
-            );
+    console.log(
+      "[TIKTOK] Video send callback received"
+    );
 
-            try {
-              if (
-                fs.existsSync(
-                  filePath
-                )
-              ) {
-                fs.unlinkSync(
-                  filePath
-                );
-              }
-            } catch (e) {}
-
-            api.setMessageReaction(
-              "❌",
-              messageID,
-              () => {},
-              true
-            );
-
-            return;
-          }
-
-          console.log(
-            "[TIKTOK] Video sent successfully"
-          );
-
-          // Delete temporary file
-          try {
-            if (
-              fs.existsSync(
-                filePath
-              )
-            ) {
-              fs.unlinkSync(
-                filePath
-              );
-            }
-          } catch (e) {
-            console.error(
-              "[TIKTOK CLEANUP]",
-              e
-            );
-          }
-
-          // ⏳ → ✅
-          api.setMessageReaction(
-            "✅",
-            messageID,
-            () => {},
-            true
-          );
-        },
-        messageID
-      );
-
-    } catch (err) {
-
+    // Delete temporary video
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (e) {
       console.error(
-        "[TIKTOK ERROR]",
-        err?.response?.data ||
-        err?.message ||
-        err
-      );
-
-      api.setMessageReaction(
-        "❌",
-        event.messageID,
-        () => {},
-        true
+        "[TIKTOK CLEANUP]",
+        e
       );
     }
-  }
-};
+
+    // ⏳ → ✅
+    api.setMessageReaction(
+      "✅",
+      messageID,
+      () => {},
+      true
+    );
+  },
+  messageID
+);
