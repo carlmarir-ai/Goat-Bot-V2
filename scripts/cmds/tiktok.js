@@ -57,7 +57,7 @@ module.exports = {
       // =========================
       // ⏳
       // =========================
-      react("⏳");
+      react("🔥");
 
       const cacheDir = path.join(__dirname, "cache");
       await fs.ensureDir(cacheDir);
@@ -119,10 +119,10 @@ module.exports = {
       if (sendResult.err) {
         // Minsan nag-e-error ang callback pero na-send (o ina-retry) pa rin
         // ang video. Kaya HINDI na ❌ dito. I-clear lang ang ⏳.
-        console.error("[TIKTOK SEND ERROR - hindi ❌]", sendResult.err);
+        console.error("[TIKTOK SEND ERROR - hindi 😈]", sendResult.err);
         react("");
       } else {
-        react("✅");
+        react("😓");
       }
     } catch (err) {
       // ❌ dito lang lalabas kung pumalya ang worker/download
