@@ -71,6 +71,27 @@ module.exports = {
 
     if (!facebookURL) return;
 
+    // ==========================================
+    // SKIP NON-FACEBOOK LINKS (hal. TikTok)
+    // Minsan l.facebook.com/l.php?u=<link> ang url ng attachment,
+    // kaya nasasalo nito ang TikTok. Hawak iyon ng tiktok.js.
+    // ==========================================
+    let realURL = facebookURL;
+    try {
+      const u = new URL(facebookURL);
+      if (/^l\.facebook\.com$/i.test(u.hostname) && u.searchParams.get("u")) {
+        realURL = u.searchParams.get("u");
+      }
+    } catch (e) {}
+
+    if (
+      /tiktok\.com/i.test(body || "") ||
+      !/(?:facebook\.com|fb\.watch)/i.test(realURL) ||
+      /^https?:\/\/l\.facebook\.com/i.test(facebookURL)
+    ) {
+      return;
+    }
+
     console.log(
       "[FACEBOOK] URL:",
       facebookURL
